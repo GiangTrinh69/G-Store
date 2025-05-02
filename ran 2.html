@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voucher Cùng G-Store</title>
+  <link rel="icon" href="icon logo-01-01.png" type="image/png">
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: start;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #fff;
+      color: #000;
+      font-family: Arial, sans-serif;
+      border: 10px solid navy;
+      box-sizing: border-box;
+      padding-top: 20px;
+    }
+    canvas {
+      border: 2px solid #000;
+      background-color: white;
+    }
+    #scoreboard {
+      font-size: 18px;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      background-color: navy;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #restartBtn {
+      display: none;
+    }
+    #voucherPanel {
+      background: white;
+      color: black;
+      border-radius: 10px;
+      padding: 20px;
+      display: none;
+      width: 300px;
+      text-align: left;
+      margin-top: 20px;
+      border: 2px solid navy;
+    }
+    #voucherPanel h3 {
+      text-align: center;
+      margin-top: 0;
+    }
+    .voucher-item {
+      margin-bottom: 8px;
+    }
+    #rulesModal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      z-index: 9999;
+      text-align: center;
+      padding: 20px;
+    }
+    #rulesModal h2 {
+      margin-bottom: 10px;
+    }
+    #rulesModal p {
+      margin-bottom: 20px;
+    }
+    /* Điều khiển ảo */
+    #touchControls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 20px;
+      user-select: none;
+    }
+    #touchControls button {
+      margin: 5px;
+      padding: 15px;
+      font-size: 24px;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background-color: navy;
+      color: white;
+    }
+    #touchControls div {
+      display: flex;
+      justify-content: center;
+    }
+  </style>
+</head>
+<body>
+
+<div id="rulesModal">
+  <h2>Thể lệ trò chơi</h2>
+  <p>Mỗi người chơi sẽ có <strong>3 lượt chơi</strong>. Sau khi chơi hết 3 lượt, tổng điểm của 3 lượt sẽ được dùng để đổi phần quà theo các mốc điểm.</p>
+  <p>Khi trò chơi kết thúc, <strong>chụp lại bảng đổi quà</strong> và đưa cho nhân viên để nhận thưởng.</p>
+  <p><strong>Không được chỉnh sửa hình ảnh</strong>. Nếu phát hiện sẽ bị đưa vào danh sách đen của G-Store.</p>
+  <button id="startGameBtn">Bắt đầu chơi</button>
+</div>
+
+<div id="scoreboard">
+  Điểm: <span id="score">0</span> |
+  Kỷ lục: <span id="highScore">0</span> |
+  Tổng điểm: <span id="totalScore">0</span> |
+  Lượt còn: <span id="lives">3</span>
+</div>
+
+<canvas id="gameCanvas" width="400" height="400"></canvas>
+<button id="restartBtn">Chơi lại</button>
+<button id="homeBtn">Trang chủ</button>
+
+<div id="voucherPanel">
+  <h3>Đổi điểm lấy voucher</h3>
+  <div id="voucherList"></div>
+</div>
+
+<!-- Điều khiển ảo -->
+<div id="touchControls">
+  <div><button id="btn-up">▲</button></div>
+  <div>
+    <button id="btn-left">◀</button>
+    <button id="btn-down">▼</button>
+    <button id="btn-right">▶</button>
+  </div>
+</div>
+
+<audio id="eatSound" src="ăn.mp3"></audio>
+<audio id="gameOverSound" src="game over.mp3"></audio>
+<audio id="backgroundMusic" src="nhạc nền.mp3" loop></audio>
+
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const scoreEl = document.getElementById('score');
+  const highScoreEl = document.getElementById('highScore');
+  const totalScoreEl = document.getElementById('totalScore');
+  const livesEl = document.getElementById('lives');
+  const restartBtn = document.getElementById('restartBtn');
+  const voucherPanel = document.getElementById('voucherPanel');
+  const voucherList = document.getElementById('voucherList');
+  const eatSound = document.getElementById('eatSound');
+  const gameOverSound = document.getElementById('gameOverSound');
+  const backgroundMusic = document.getElementById('backgroundMusic');
+  const rulesModal = document.getElementById('rulesModal');
+  const startGameBtn = document.getElementById('startGameBtn');
+  const homeBtn = document.getElementById('homeBtn');
+
+  const gridSize = 20;
+  const tileCount = canvas.width / gridSize;
+
+  let snake, food, dx, dy, score, highScore, totalScore, gameLoop, speed, lives;
+  let musicStarted = false;
+
+  const vouchers = [
+    { points: 50, reward: "Giảm 30% hóa đơn" },
+    { points: 200, reward: "Tặng 1 móc khoá" },
+    { points: 350, reward: "Tặng 1 cái nón" },
+    { points: 400, reward: "Tặng 1 cà vạt (dưới 200k)" },
+    { points: 500, reward: "Giảm 80% hóa đơn" },
+  ];
+
+  function initGame() {
+    snake = [{ x: 10, y: 10 }];
+    dx = 1;
+    dy = 0;
+    score = 0;
+    speed = 100;
+    updateDisplay();
+    food = generateFood();
+    clearInterval(gameLoop);
+    gameLoop = setInterval(update, speed);
+    restartBtn.style.display = 'none';
+    voucherPanel.style.display = 'none';
+  }
+
+  function generateFood() {
+    let f;
+    do {
+      f = {
+        x: Math.floor(Math.random() * tileCount),
+        y: Math.floor(Math.random() * tileCount)
+      };
+    } while (snake.some(s => s.x === f.x && s.y === f.y));
+    return f;
+  }
+
+  function updateDisplay() {
+    scoreEl.textContent = score;
+    highScoreEl.textContent = highScore;
+    totalScoreEl.textContent = totalScore;
+    livesEl.textContent = lives;
+  }
+
+  function drawSnake() {
+    ctx.fillStyle = 'lime';
+    snake.forEach(s => {
+      ctx.fillRect(s.x * gridSize, s.y * gridSize, gridSize - 2, gridSize - 2);
+    });
+  }
+
+  function drawFood() {
+    ctx.fillStyle = 'red';
+    ctx.fillRect(food.x * gridSize, food.y * gridSize, gridSize - 2, gridSize - 2);
+  }
+
+  function update() {
+    const head = { x: snake[0].x + dx, y: snake[0].y + dy };
+    snake.unshift(head);
+
+    if (head.x === food.x && head.y === food.y) {
+      score++;
+      eatSound.play();
+      food = generateFood();
+    } else {
+      snake.pop();
+    }
+
+    if (checkCollision()) {
+      endRound();
+      return;
+    }
+
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawSnake();
+    drawFood();
+    updateDisplay();
+  }
+
+  function checkCollision() {
+    const head = snake[0];
+    if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) return true;
+    for (let i = 1; i < snake.length; i++) {
+      if (head.x === snake[i].x && head.y === snake[i].y) return true;
+    }
+    return false;
+  }
+
+  function endRound() {
+    clearInterval(gameLoop);
+    totalScore += score;
+    gameOverSound.play();
+    if (score > highScore) {
+      highScore = score;
+      localStorage.setItem('highScore', highScore);
+    }
+    lives--;
+    updateDisplay();
+    if (lives <= 0) {
+      showVoucherPanel();
+      alert("Trò chơi kết thúc! Hãy chụp lại bảng đổi quà.");
+    } else {
+      restartBtn.style.display = 'inline-block';
+    }
+  }
+
+  function showVoucherPanel() {
+    voucherPanel.style.display = 'block';
+    voucherList.innerHTML = "";
+    vouchers.sort((a, b) => a.points - b.points);
+    vouchers.forEach(v => {
+      if (totalScore >= v.points) {
+        voucherList.innerHTML += `<div class="voucher-item">✅ ${v.reward} (${v.points} điểm)</div>`;
+      } else {
+        voucherList.innerHTML += `<div class="voucher-item">❌ ${v.reward} (${v.points} điểm)</div>`;
+      }
+    });
+  }
+
+  document.addEventListener('keydown', e => {
+    switch (e.key) {
+      case 'ArrowUp': if (dy !== 1) { dx = 0; dy = -1; } break;
+      case 'ArrowDown': if (dy !== -1) { dx = 0; dy = 1; } break;
+      case 'ArrowLeft': if (dx !== 1) { dx = -1; dy = 0; } break;
+      case 'ArrowRight': if (dx !== -1) { dx = 1; dy = 0; } break;
+    }
+  });
+
+  document.getElementById('btn-up').addEventListener('click', () => { if (dy !== 1) { dx = 0; dy = -1; }});
+  document.getElementById('btn-down').addEventListener('click', () => { if (dy !== -1) { dx = 0; dy = 1; }});
+  document.getElementById('btn-left').addEventListener('click', () => { if (dx !== 1) { dx = -1; dy = 0; }});
+  document.getElementById('btn-right').addEventListener('click', () => { if (dx !== -1) { dx = 1; dy = 0; }});
+
+  restartBtn.addEventListener('click', initGame);
+
+  startGameBtn.addEventListener('click', () => {
+    rulesModal.style.display = 'none';
+    if (!musicStarted) {
+      backgroundMusic.play().catch(() => {});
+      musicStarted = true;
+    }
+    initGame();
+  });
+
+  homeBtn.addEventListener('click', () => {
+    window.location.href = 'website co game.html.html';
+  });
+
+  highScore = parseInt(localStorage.getItem('highScore')) || 0;
+  totalScore = 0;
+  lives = 3;
+</script>
+
+</body>
+</html>
